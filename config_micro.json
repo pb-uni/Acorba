@@ -1,0 +1,149 @@
+{
+ "version": "auto-py-to-exe-configuration_v1",
+ "pyinstallerOptions": [
+  {
+   "optionDest": "noconfirm",
+   "value": true
+  },
+  {
+   "optionDest": "filenames",
+   "value": "E:/ACORBA/v1.2/microscope.py"
+  },
+  {
+   "optionDest": "onefile",
+   "value": false
+  },
+  {
+   "optionDest": "console",
+   "value": false
+  },
+  {
+   "optionDest": "icon_file",
+   "value": "E:/ACORBA/Compilev1.2/acorbalogo2..ico"
+  },
+  {
+   "optionDest": "ascii",
+   "value": false
+  },
+  {
+   "optionDest": "clean_build",
+   "value": false
+  },
+  {
+   "optionDest": "strip",
+   "value": false
+  },
+  {
+   "optionDest": "noupx",
+   "value": false
+  },
+  {
+   "optionDest": "uac_admin",
+   "value": false
+  },
+  {
+   "optionDest": "uac_uiaccess",
+   "value": false
+  },
+  {
+   "optionDest": "win_private_assemblies",
+   "value": false
+  },
+  {
+   "optionDest": "win_no_prefer_redirects",
+   "value": false
+  },
+  {
+   "optionDest": "bootloader_ignore_signals",
+   "value": false
+  },
+  {
+   "optionDest": "disable_windowed_traceback",
+   "value": false
+  },
+  {
+   "optionDest": "embed_manifest",
+   "value": false
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "lazy"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "skimage._shared"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "vispy.glsl"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "napari"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "astropy"
+  },
+  {
+   "optionDest": "collect_data",
+   "value": "napari"
+  },
+  {
+   "optionDest": "copy_metadata",
+   "value": "napari"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "cv2"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "vispy.app"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "QtOpenGL"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "PyQt5"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "vispy.app.backends._pyqt5"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "vispy.ext._bundled.six"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "magicgui.backends._qtpy"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "napari._event_loop"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "freetype."
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "psygnal"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "scipy.special.cython_special"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "tensorflow.python.keras.engine.base_layer_v1"
+  }
+ ],
+ "nonPyinstallerOptions": {
+  "increaseRecursionLimit": true,
+  "manualArguments": ""
+ }
+}
