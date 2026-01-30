@@ -1,5 +1,5 @@
 # ACORBA macOS Port Dependencies
-# Optimized for Python 3.8 or 3.9
+# Optimized for Python 3.9 on macOS
 
 # Core Data & Image Processing
 numpy==1.19.5
@@ -9,11 +9,11 @@ opencv-python==4.5.1.48
 scikit-image==0.18.1
 scikit-learn==0.24.1
 tifffile==2021.2.1
+scipy==1.6.2
 
 # Machine Learning (macOS Specific)
-tensorflow-macos==2.6.0; sys_platform == 'darwin'
-keras==2.6.0
-keras-unet==0.1.2
+tensorflow
+keras_unet
 
 # Specialized Biology/Imaging Libraries
 astropy==4.2.1
@@ -21,5 +21,5 @@ fil_finder==1.7
 patchify==0.2.3
 
 # Interface & Progress
-PySimpleGUI==4.34.0
+FreeSimpleGUI==4.34.0
 tqdm==4.62.2
