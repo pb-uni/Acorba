@@ -1,18 +1,42 @@
-
 #!/usr/bin/env python3
+"""
+ACORBA: Automatic Calculation Of Root Bending Angle
+Modern GUI redesign with contemporary aesthetics
+"""
 import os
 import sys
 import subprocess
+import webbrowser
+from datetime import date
 import FreeSimpleGUI as sg
 
-# macOS cosmetic: silence the "system Tk is deprecated" warning (harmless on other OSes)
+# macOS cosmetic: silence the "system Tk is deprecated" warning
 os.environ.setdefault("TK_SILENCE_DEPRECATION", "1")
 
-version = 'v1.2 Jan. 2026'
+version = 'v1.3 Jan. 2026'
+today = date.today()
+d = today.strftime("%b-%d-%Y")
+
+# ---------- Modern Color Scheme -------------------------------------------------
+COLORS = {
+    'bg_primary': '#FAFAFA',
+    'bg_secondary': '#FFFFFF',
+    'bg_tertiary': '#F5F5F5',
+    'accent': '#2E7D32',
+    'accent_hover': '#388E3C',
+    'text_primary': '#1A1A1A',
+    'text_secondary': '#666666',
+    'border': '#E0E0E0',
+    'console_bg': '#1E1E1E',
+    'console_text': '#D4D4D4',
+    'success': '#43A047',
+    'error': '#E53935',
+    'warning': '#FB8C00'
+}
 
 # ---------- Subprocess helpers -------------------------------------------------
 
-def run_command(cmd_list, window=None):
+def run_command(cmd_list, window=None, save_log=True, output_folder=None):
     """
     Execute a command as a list (no shell), stream output to the Multiline if provided.
     Works reliably across macOS/Linux/Windows and handles spaces/quoting safely.
@@ -32,22 +56,29 @@ def run_command(cmd_list, window=None):
 
     lines = []
     for line in proc.stdout:
-        lines.append(line.rstrip('\n'))
+        line_stripped = line.rstrip('\n')
+        lines.append(line_stripped)
         if window:
             window['-ML-'].write(line)
             window.refresh()
 
     rc = proc.wait()
-    return rc, "\n".join(lines)
+    output = "\n".join(lines)
+    
+    if save_log and output_folder:
+        try:
+            log_path = os.path.join(output_folder, f'analysis_log-{d}.txt')
+            with open(log_path, 'w') as f:
+                f.write(output)
+        except Exception as e:
+            if window:
+                window['-ML-'].write(f"[WARNING] Could not save log: {e}\n")
+    
+    return rc, output
 
 
 def build_param_list(values, mapping):
-    """
-    Convert GUI values into a flat list of CLI args:
-    ['--flag', 'value', '--flag2', 'value2', ...]
-    Checkboxes become '1' or '0' to preserve original behavior.
-    Empty optional fields become '' (your downstream scripts decide what to do).
-    """
+    """Convert GUI values into a flat list of CLI args"""
     args = []
     for key, flag in mapping.items():
         val = values.get(key, '')
@@ -59,9 +90,7 @@ def build_param_list(values, mapping):
 
 
 def script_for(exp_type, action):
-    """
-    Choose the worker script based on experiment type and the button pressed.
-    """
+    """Choose the worker script based on experiment type and button pressed"""
     exp = (exp_type or '').strip()
     if action == 'Full Analysis':
         return 'scanner.py' if exp == 'Scanner' else 'microscope.py'
@@ -69,145 +98,355 @@ def script_for(exp_type, action):
         return 'testsegmentation_scanner.py' if exp == 'Scanner' else 'testsegmentation_micro.py'
     if action == 'Segmentation only':
         return 'Segmentation_only.py' if exp == 'Scanner' else 'Segmentation_onlymicro.py'
+    if action == 'Binary Mask Assistant':
+        return 'test.py'
     return None
 
-# ---------- GUI ---------------------------------------------------------------
 
-def main():
-    # (Fixed typo) input_definition instead of input_defintion
+def check_for_updates(current_version):
+    """Check if newer version is available on SourceForge"""
+    link = "https://sourceforge.net/projects/acorba/files/"
+    try:
+        import requests
+        with requests.get(link, timeout=10) as f:
+            file = f.text
+        
+        version_list = []
+        search_str = "ACORBA_setup_v"
+        pos = 0
+        while True:
+            start = file.find(search_str, pos)
+            if start == -1:
+                break
+            end = file.find(".exe", start)
+            if end == -1:
+                break
+            ver = file[start + len(search_str):end]
+            try:
+                float(ver)
+                version_list.append(ver)
+            except ValueError:
+                pass
+            pos = end + 1
+        
+        version_list = list(set(version_list))
+        current_ver_num = float(current_version.replace('v', '').split()[0])
+        newer = [v for v in version_list if float(v) > current_ver_num]
+        
+        return newer
+    except Exception as e:
+        return None, str(e)
+
+
+# ---------- Modern GUI ---------------------------------------------------------------
+
+def create_modern_gui():
+    """Create the modern GUI layout"""
+    
     input_definition = {
         '-FOLDER-'   : '--input_folder',
-        '-EXP-'      : '--exp_type',           # combo
-        '-SAVEPLOT-' : '--saveplot',           # checkbox
-        '-NORM-'     : '--normalization',      # checkbox
-        '-PRED-'     : '--prediction',         # None / First / All
-        '-BINARY-'   : '--binary_folder',      # optional folder (own masks)
-        '-ROOTPLOT-' : '--rootplot',           # checkbox
-        '-METHOD-'   : '--method',             # combo
-        '-CUSTOM-'   : '--custom',             # optional folder (own models)
-        '-SMOOTH-'   : '--smooth',             # checkbox
-        '-ACCU-'     : '--superaccuracy',      # checkbox
-        '-SEG-'      : '--savesegmentation',   # checkbox
-        '-TRADMETH-' : '--tradmethod'          # combo
+        '-EXP-'      : '--exp_type',
+        '-SAVEPLOT-' : '--saveplot',
+        '-NORM-'     : '--normalization',
+        '-PRED-'     : '--prediction',
+        '-BINARY-'   : '--binary_folder',
+        '-ROOTPLOT-' : '--rootplot',
+        '-METHOD-'   : '--method',
+        '-CUSTOM-'   : '--custom',
+        '-SMOOTH-'   : '--smooth',
+        '-ACCU-'     : '--superaccuracy',
+        '-SEG-'      : '--savesegmentation',
+        '-TRADMETH-' : '--tradmethod',
+        '-PIX-'      : '--circlepix',
+        '-BROKEN-'   : '--broken',
+        '-VECTOR-'   : '--vector'
     }
 
-    layout = [[sg.Text("Hello World! Let's measure some angles", font='Any 10')]]
+    # Custom button appearance
+    button_config = {
+        'size': (18, 1),
+        'button_color': (COLORS['bg_secondary'], COLORS['accent']),
+        'border_width': 0,
+        'font': ('Helvetica', 11)
+    }
+    
+    secondary_button = {
+        'size': (15, 1),
+        'button_color': (COLORS['text_primary'], COLORS['bg_tertiary']),
+        'border_width': 0,
+        'font': ('Helvetica', 10)
+    }
+    
+    # Browse button config (FolderBrowse has different supported args)
+    browse_button = {
+        'size': (10, 1),
+        'button_color': (COLORS['text_primary'], COLORS['bg_tertiary']),
+        'font': ('Helvetica', 10)
+    }
 
-    layout += [
-        # General input infos
-        [
-            sg.Text('Experiment type', size=(35, 1), justification='r', tooltip="Experiment type"),
-            sg.Combo(('Microscopy Through', 'Microscopy Sandwich', 'Scanner'),
-                     default_value='Microscopy Through', size=(20, 1), key='-EXP-')
-        ],
-        [
-            sg.Text('Segmentation method', size=(35, 1), justification='r', tooltip="Segmentation method"),
-            sg.Combo(('Deep Machine Learning', 'Traditional', 'Own masks'),
-                     default_value='Deep Machine Learning', size=(25, 1), key='-METHOD-')
-        ],
-        [
-            sg.Text('Input Folder (containing .tif stacks)', size=(35, 1), justification='r',
-                    tooltip="The folder containing your images"),
-            sg.Input(default_text='', key='-FOLDER-', size=(40, 1)),
-            sg.FolderBrowse()
-        ],
-        [
-            sg.Text('Use your own masks? (left blank if not)', size=(35, 1), justification='r',
-                    tooltip="The folder containing your masks"),
-            sg.Input(default_text='', key='-BINARY-', size=(40, 1)),
-            sg.FolderBrowse()
-        ],
-        [
-            sg.Text('Use your own models? (left blank if not)', size=(35, 1), justification='r',
-                    tooltip="The folder containing your models"),
-            sg.Input(default_text='', key='-CUSTOM-', size=(40, 1)),
-            sg.FolderBrowse()
-        ],
-
-        # General options
-        [sg.Frame(
-            layout=[
-                [
-                    sg.Checkbox('Normalized the data to the first angle', default=True, key='-NORM-', size=(30, 1)),
-                    sg.Checkbox('Save angle/time plots', key='-SAVEPLOT-', size=(20, 1)),
-                    sg.Checkbox('Save analysis plots', key='-ROOTPLOT-', size=(15, 1)),
-                    sg.Checkbox('Save raw segmentations (tif)', key='-SEG-', size=(20, 1)),
-                ],
-                [
-                    sg.Text('Save root surface prediction/traditional segmentation of '),
-                    sg.Combo(('None', 'First', 'All'), default_value='None', size=(10, 1), key='-PRED-'),
-                    sg.Text(' timeframe(s) (Does not work with Own Masks)')
-                ]
-            ],
-            title='General options',
-            relief=sg.RELIEF_SUNKEN,
-            vertical_alignment="center"
-        )],
-
-        # Scanner options
-        [sg.Frame(
-            layout=[
-                [
-                    sg.Checkbox('Deactivate smoothing', size=(20, 1), key='-SMOOTH-', default=True),
-                    sg.Checkbox('Super accuracy mode (High RAM/GPU highly recommended)', size=(50, 1),
-                                key='-ACCU-', default=False),
-                    sg.Text('Traditional method', size=(14, 1), justification='r', tooltip="Traditional method"),
-                    sg.Combo(('Entropy', 'Threshold'), default_value='Entropy', size=(10, 1), key='-TRADMETH-'),
-                ],
-            ],
-            title='Scanner options',
-            relief=sg.RELIEF_SUNKEN,
-            vertical_alignment="center"
-        )],
-
-        # Fake console
-        [sg.Text('Command Line Output:')],
-        [sg.Multiline(size=(125, 25), write_only=True, font='Courier 8',
-                      autoscroll=True, key='-ML-')],
-
-        # Buttons
-        [sg.Button('Full Analysis'),
-         sg.Button('Segmentation only'),
-         sg.Button('Test segmentation'),
-         sg.Button('Exit')],
-
-        # Footer
-        [sg.Text('Charles University, Faculty of Sciences, Dpt. of Experimental Plant Biology, '
-                 'Cell Growth Lab, Prague, Czech Republic (NBC Serre and M Fendrych)',
-                 font='Any 8', text_color='brown')],
-        [sg.Text('MacOS port by Philippe Baumann, University of Fribourg - '
-                 'Source code: https://sourceforge.net/projects/acorba/',
-                 font='Any 8', text_color='black')]
+    # Header
+    header = [
+        [sg.Text('ACORBA', font=('Helvetica', 28, 'bold'), text_color=COLORS['accent'],
+                pad=((20, 0)))],
+        [sg.Text("Automatic Calculation Of Root Bending Angle, Let's measure some angles!", 
+                font=('Helvetica', 11), text_color=COLORS['text_secondary'],
+                pad=((20, 0), (0, 8)))]
     ]
 
-    # NOTE: icon=None avoids PNG/ICO decode crashes on macOS/Tk
+    # Configuration Section
+    config_frame = sg.Frame('Configuration', [
+        [
+            sg.Column([
+                [sg.Text('Experiment Type', size=(18, 1), font=('Helvetica', 10, 'bold'),
+                        text_color=COLORS['text_primary'])],
+                [sg.Combo(('Microscopy Through', 'Microscopy Sandwich', 'Scanner'),
+                         default_value='Microscopy Through', size=(32, 1), key='-EXP-',
+                         font=('Helvetica', 10), readonly=True)],
+                
+                [sg.Text('Segmentation Method', size=(18, 1), font=('Helvetica', 10, 'bold'),
+                        text_color=COLORS['text_primary'], pad=((0, 0), (8, 0)))],
+                [sg.Combo(('Deep Machine Learning', 'Traditional', 'Own masks'),
+                         default_value='Deep Machine Learning', size=(32, 1), key='-METHOD-',
+                         font=('Helvetica', 10), readonly=True)],
+            ], pad=(15, 6)),
+            
+            sg.Column([
+                [sg.Text('Input Folder', size=(18, 1), font=('Helvetica', 10, 'bold'),
+                        text_color=COLORS['text_primary'])],
+                [sg.Input(default_text='', key='-FOLDER-', size=(35, 1), font=('Helvetica', 10)),
+                 sg.FolderBrowse(button_text='Browse', **browse_button)],
+                
+                [sg.Checkbox('Normalize to first angle', default=True, key='-NORM-',
+                            font=('Helvetica', 10), text_color=COLORS['text_primary'],
+                            pad=((0, 0), (8, 0)))],
+            ], pad=(15, 6))
+        ]
+    ], font=('Helvetica', 11, 'bold'), relief=sg.RELIEF_FLAT, 
+    border_width=1, pad=(20, 8))
+
+    # Advanced Options - Collapsible style
+    advanced_frame = sg.Frame('Advanced Options', [
+        [
+            sg.Column([
+                [sg.Text('Custom Masks', font=('Helvetica', 10, 'bold'))],
+                [sg.Input(default_text='', key='-BINARY-', size=(30, 1), font=('Helvetica', 9)),
+                 sg.FolderBrowse(button_text='...', size=(3, 1))],
+                
+                [sg.Text('Custom Models', font=('Helvetica', 10, 'bold'), pad=((0, 0), (8, 0)))],
+                [sg.Input(default_text='', key='-CUSTOM-', size=(30, 1), font=('Helvetica', 9)),
+                 sg.FolderBrowse(button_text='...', size=(3, 1))],
+            ], pad=(15, 0)),
+            
+            sg.Column([
+                [sg.Text('Microscopy Options', font=('Helvetica', 10, 'bold'))],
+                [sg.Text('Circle crop size (px):', size=(18, 1)),
+                 sg.Spin([i for i in range(1, 20000)], initial_value=40, key='-PIX-', size=(8, 1))],
+                
+                [sg.Text('Scanner Options', font=('Helvetica', 10, 'bold'), pad=((0, 0), (8, 0)))],
+                [sg.Checkbox('Deactivate smoothing', key='-SMOOTH-', default=True, font=('Helvetica', 9))],
+                [sg.Checkbox('Super accuracy mode', key='-ACCU-', default=False, font=('Helvetica', 9))],
+            ], pad=(15, 0)),
+            
+            sg.Column([
+                [sg.Text('Traditional Method', font=('Helvetica', 10, 'bold'))],
+                [sg.Combo(('Entropy', 'Threshold'), default_value='Entropy', 
+                         size=(15, 1), key='-TRADMETH-', readonly=True)],
+                
+                [sg.Text('Root Parameters', font=('Helvetica', 10, 'bold'), pad=((0, 0), (8, 0)))],
+                [sg.Text('Max distance (px):', size=(15, 1)),
+                 sg.Spin([i for i in range(1, 20000)], initial_value=50, key='-BROKEN-', size=(8, 1))],
+                [sg.Text('Vector length (px):', size=(15, 1)),
+                 sg.Spin([i for i in range(1, 20000)], initial_value=10, key='-VECTOR-', size=(8, 1))],
+            ], pad=(15, 0))
+        ]
+    ], font=('Helvetica', 11, 'bold'), relief=sg.RELIEF_FLAT, 
+    border_width=1, pad=(20, 3), visible=True, key='-ADVANCED-')
+
+    # Export Options
+    export_frame = sg.Frame('Export Settings', [
+        [
+            sg.Column([
+                [sg.Checkbox('Save analysis plots', key='-ROOTPLOT-', font=('Helvetica', 10))],
+                [sg.Checkbox('Save segmentations (TIF)', key='-SEG-', font=('Helvetica', 10))],
+            ], pad=(15, 0)),
+            
+            sg.Column([
+                [sg.Text('Save predictions for:', font=('Helvetica', 10, 'bold'))],
+                [sg.Combo(('None', 'First', 'All'), default_value='None', 
+                         size=(12, 1), key='-PRED-', readonly=True, font=('Helvetica', 10))],
+                [sg.Text('(Not available with custom masks)', font=('Helvetica', 8), 
+                        text_color=COLORS['text_secondary'])],
+            ], pad=(15, 0))
+        ]
+    ], font=('Helvetica', 11, 'bold'), relief=sg.RELIEF_FLAT, 
+    border_width=1, pad=(10, 0))
+
+    # Console Output
+    console_section = [
+        [sg.Text('Analysis Output', font=('Helvetica', 11, 'bold'), 
+                text_color=COLORS['text_primary'], pad=((20, 0), (15, 5)))],
+        [sg.Multiline(size=(130, 10), write_only=True, font=('Consolas', 9),
+                     autoscroll=True, key='-ML-', background_color=COLORS['console_bg'],
+                     text_color=COLORS['console_text'], border_width=0, pad=(20, 0))]
+    ]
+
+    # Action Buttons
+    action_buttons = [
+        [
+            sg.Push(),
+            sg.Button('Full Analysis', **button_config, key='Full Analysis'),
+            sg.Button('Segmentation Only', **button_config, key='Segmentation only'),
+            sg.Button('Test Segmentation', **button_config, key='Test segmentation'),
+            sg.Button('Mask Assistant', **button_config, key='Binary Mask Assistant'),
+            sg.Push()
+        ]
+    ]
+
+    # Utility Buttons
+    utility_buttons = [
+        [
+            sg.Push(),
+            sg.Button('Report Bug', **secondary_button, key='Report a bug'),
+            sg.Button('Check Updates', **secondary_button, key='Check for updates'),
+            sg.Button('Release Notes', **secondary_button, key='Open Release file'),
+            sg.Button('Exit', **secondary_button, key='Exit'),
+            sg.Push()
+        ]
+    ]
+
+    # Footer
+    footer = [
+        [sg.HorizontalSeparator(pad=(20, 3))],
+        [sg.Text('Charles University, Faculty of Sciences, Prague, Czech Republic | NBC Serre & M Fendrych | MacOS Port: P Baumann, University of Fribourg',
+                font=('Helvetica', 8), text_color=COLORS['text_secondary'], pad=((20, 0), (5, 2)))],
+        [sg.Text(f'Version {version}', font=('Helvetica', 8), 
+                text_color=COLORS['accent'], pad=((20, 0), (0, 15)))]
+    ]
+
+    # Assemble final layout
+    layout = [
+        *header,
+        [config_frame],
+        [advanced_frame],
+        [export_frame],
+        *console_section,
+        [sg.Text('')],  # Spacer
+        *action_buttons,
+        [sg.Text('')],  # Spacer
+        *utility_buttons,
+        *footer
+    ]
+
+    return layout, input_definition
+
+
+def main():
+    layout, input_definition = create_modern_gui()
+    
+    # Create window with modern styling
     window = sg.Window(
-        'ACORBA: Automatic Calculation Of Root Bending Angle____' + version,
+        f'ACORBA {version}',
         layout,
         finalize=True,
         keep_on_top=False,
-        icon=None
+        icon=None,
+        margins=(0, 0),
+        element_padding=(5, 5),
+        background_color=COLORS['bg_primary'],
+        font=('Helvetica', 10),
+        resizable=True
     )
+
+    # Welcome message
+    window['-ML-'].write("═" * 80 + "\n")
+    window['-ML-'].write("  ACORBA - Automatic Calculation Of Root Bending Angle\n")
+    window['-ML-'].write("  Ready for analysis...\n")
+    window['-ML-'].write("═" * 80 + "\n\n")
 
     while True:
         event, values = window.read()
+        
         if event in (sg.WIN_CLOSED, 'Exit'):
             break
 
-        if event in ('Full Analysis', 'Test segmentation', 'Segmentation only'):
+        # Main analysis actions
+        if event in ('Full Analysis', 'Test segmentation', 'Segmentation only', 'Binary Mask Assistant'):
             script = script_for(values.get('-EXP-'), event)
             if not script:
-                window['-ML-'].write(f"[ERROR] Could not determine script for action: {event}\n")
+                window['-ML-'].write(f"✗ ERROR: Could not determine script for action: {event}\n")
                 continue
 
             args = [sys.executable, script] + build_param_list(values, input_definition)
-            window['-ML-'].write(f"\n[RUN] {' '.join(args)}\n")
-            code, _ = run_command(args, window=window)
-            window['-ML-'].write(f"[DONE] Exit code: {code}\n")
+            
+            window['-ML-'].write("\n" + "─" * 80 + "\n")
+            window['-ML-'].write(f"▶ Starting: {event}\n")
+            window['-ML-'].write(f"  Command: {' '.join(args[:2])}\n")
+            window['-ML-'].write("─" * 80 + "\n")
+            
+            output_folder = values.get('-FOLDER-', '')
+            code, _ = run_command(args, window=window, save_log=True, output_folder=output_folder)
+            
+            status = "✓ COMPLETED" if code == 0 else "✗ FAILED"
+            window['-ML-'].write(f"\n{status} (Exit code: {code})\n")
+            window['-ML-'].write("═" * 80 + "\n\n")
+        
+        # Utility actions
+        elif event == 'Report a bug':
+            window['-ML-'].write("ℹ Opening bug report page...\n")
+            webbrowser.open('https://sourceforge.net/p/acorba/tickets/')
+        
+        elif event == 'Check for updates':
+            window['-ML-'].write("ℹ Checking for updates...\n")
+            result = check_for_updates(version)
+            
+            if result is None or (isinstance(result, tuple) and result[0] is None):
+                error_msg = result[1] if isinstance(result, tuple) else "Connection failed"
+                window['-ML-'].write(f"✗ Could not check for updates: {error_msg}\n")
+                sg.popup_ok("Could not connect to update server.\nPlease check your internet connection.",
+                           title="Update Check Failed", keep_on_top=True)
+            elif len(result) > 0:
+                window['-ML-'].write(f"✓ New version available: {result[0]}\n")
+                answer = sg.popup_yes_no(
+                    f'New version {result[0]} is available!\n\nWould you like to download it?',
+                    title="Update Available", 
+                    keep_on_top=True
+                )
+                if answer == 'Yes':
+                    webbrowser.open('https://sourceforge.net/projects/acorba/files/latest/download')
+            else:
+                window['-ML-'].write("✓ You're running the latest version\n")
+                sg.popup_ok('You are running the latest version of ACORBA.',
+                           title="Up to Date", keep_on_top=True)
+        
+        elif event == 'Open Release file':
+            try:
+                if sys.platform == 'darwin':
+                    subprocess.run(['open', 'README.txt'])
+                elif sys.platform == 'win32':
+                    os.startfile('README.txt')
+                else:
+                    subprocess.run(['xdg-open', 'README.txt'])
+                window['-ML-'].write("ℹ Opening release notes...\n")
+            except Exception as e:
+                window['-ML-'].write(f"✗ Could not open README.txt: {e}\n")
 
     window.close()
 
 
 if __name__ == '__main__':
-    sg.theme('Light Brown 3')
+    # Modern theme setup
+    sg.theme_add_new('ACORBAModern', {
+        'BACKGROUND': COLORS['bg_primary'],
+        'TEXT': COLORS['text_primary'],
+        'INPUT': COLORS['bg_secondary'],
+        'TEXT_INPUT': COLORS['text_primary'],
+        'SCROLL': COLORS['border'],
+        'BUTTON': (COLORS['bg_secondary'], COLORS['accent']),
+        'PROGRESS': (COLORS['accent'], COLORS['bg_tertiary']),
+        'BORDER': 1,
+        'SLIDER_DEPTH': 0,
+        'PROGRESS_DEPTH': 0,
+    })
+    
+    sg.theme('ACORBAModern')
     main()

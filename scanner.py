@@ -12,7 +12,7 @@ import tifffile
 import cv2
 import numpy as np
 import pandas as pd
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 from time import sleep, time
 from skimage.io import imread
 import matplotlib.pyplot as plt

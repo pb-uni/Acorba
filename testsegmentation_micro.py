@@ -13,7 +13,7 @@ import gc
 import tifffile as tiff
 from skimage.transform import resize
 from tensorflow.autograph import set_verbosity
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 import acorba
 
 set_verbosity(0)

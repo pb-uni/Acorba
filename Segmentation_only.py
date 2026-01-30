@@ -13,7 +13,7 @@ import tifffile
 from skimage.io import imread
 import matplotlib.pyplot as plt
 import numpy as np
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 from tensorflow.autograph import set_verbosity
 import acorba
 

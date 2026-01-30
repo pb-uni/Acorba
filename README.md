@@ -28,7 +28,7 @@ ACORBA provides an unbiased, highly reproducible, and automated workflow for pla
 ACORBA was originally developed using:
 *   **Language:** Python
 *   **ML Architecture:** Modified UNET for semantic segmentation.
-*   **Primary Frameworks:** TensorFlow, Keras, OpenCV, Scikit-Image, PySimpleGUI (migrated to a free drop-in alternative due to paywall in version 5).
+*   **Primary Frameworks:** TensorFlow, Keras, OpenCV, Scikit-Image, FreeSimpleGUI (migrated to a free drop-in alternative due to paywall in version 5).
 
 ---
 

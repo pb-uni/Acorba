@@ -17,7 +17,7 @@ from skimage.morphology import skeletonize
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.cluster import KMeans
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 from pathlib import PurePath
 import acorba
 

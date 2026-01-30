@@ -19,7 +19,7 @@ from skimage.transform import resize
 import acorba
 import warnings
 from napari.settings import get_settings
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 
 args=acorba.folder.parser()
 if args.exp_type=="Scanner":

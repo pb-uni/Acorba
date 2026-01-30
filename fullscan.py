@@ -18,7 +18,7 @@ def full_scanner(images,args,looplenght,model,brokenfactor,stack2,listimage2,ori
     import matplotlib.pyplot as plt
     import numpy as np
     import pandas as pd
-    import PySimpleGUI as sg
+    import FreeSimpleGUI as sg
     import dask
     if args.savesegmentation=="True":
         seg_list=[]#create segmentation list to transform into an array at the end and imwrite, save padded picture if machine learning regular

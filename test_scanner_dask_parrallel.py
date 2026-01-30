@@ -22,7 +22,7 @@ from skimage.io import imread
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 import dask
 sg.theme('Light Brown 8')
 start_time = time()#Start measuring time, so the user knows how long took his session

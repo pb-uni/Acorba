@@ -21,3 +21,6 @@ patchify
 # Interface & Progress
 FreeSimpleGUI
 tqdm
+
+napari
+fil_finder

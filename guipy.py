@@ -1,6 +1,6 @@
 import subprocess
 import sys
-import PySimpleGUI as sg
+import FreeSimpleGUI as sg
 import webbrowser
 from datetime import date
 today = date.today()
