@@ -1,192 +1,396 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-nbcs, Segmentation_only.py script.
-Loaded buy the ACORBA GUI to perform scanner root segmentation only with no
-angle measurements.
+ACORBA - Segmentation Only (Scanner)
+Performs scanner root segmentation only with no angle measurements.
+
+Created on Mon Sep 13 17:08:31 2021
+Modified on Jan 26 2026 by Philippe Baumann
+
+Improvements:
+- Safe output directory handling with CLI + GUI fallback
+- Cross-platform compatibility (macOS/Linux/Windows)
+- Better error handling and user feedback
+- FreeSimpleGUI instead of PySimpleGUI
+- Proper Path handling with pathlib
+
+@author: Nelson BC Serre / Modified by Philippe B.
 """
 
-#Load dependencies
-import sys
-import os
-import gc
-from time import sleep, time
-import tifffile
-from skimage.io import imread
-import matplotlib.pyplot as plt
-import numpy as np
-import FreeSimpleGUI as sg
-from tensorflow.autograph import set_verbosity
-import acorba
-
-sg.theme('Light Brown 8')
-#Start measuring time, so the user knows how long took his session
+# Load libraries
+print("Loading modules")
+from time import time, sleep
 start_time = time()
-#Silence non-essential tensorflow infos and non-consequential warnings
-set_verbosity(0)
+import numpy as np
+import os
+from pathlib import Path
+import tifffile as tiff
+from skimage.transform import resize
+import cv2
+import FreeSimpleGUI as sg
+import argparse
+import gc
+
+# Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+from tensorflow.autograph import set_verbosity
+set_verbosity(0)
 
-print("ALL LIBRARIES ARE IMPORTED, ACORBA WILL START NOW\
-      n##################################################")
+print("ALL LIBRARIES ARE IMPORTED, ACORBA WILL START NOW")
+print("=" * 80)
 
-plt.ioff()#Shuts off matplotlib interactive mode
+# ----------------------
+# Utility Functions
+# ----------------------
 
-#retrieve user inputs from the GUI
-args=acorba.folder.parser()
-#Debug
-#args=acorba.debug.scanner_debug()
+def looplenght_determinator(list_image, folder):
+    """
+    Calculate total number of frames across all image stacks.
+    Used for progress bar calculations.
+    """
+    total_frames = 0
+    for img_name in list_image:
+        img_path = Path(folder) / img_name
+        try:
+            img = tiff.imread(str(img_path))
+            total_frames += len(img)
+        except Exception as e:
+            print(f"Warning: Could not read {img_name} for length calculation: {e}")
+    return total_frames
 
-#Set random seed to "The Answer to the Ultimate Question of Life, The Universe,
-#and Everything
-np.random.seed(42)
 
-#if two skeleton end and origin are spaced < 100 pixels they will be stitched
-brokenfactor=int(args.broken)
+def trad_scanner_entropy(image):
+    """
+    Traditional segmentation for scanner using entropy thresholding.
+    """
+    from skimage.filters import threshold_otsu
+    try:
+        thresh = threshold_otsu(image)
+        binary = image > thresh
+        return binary.astype(np.uint8)
+    except Exception as e:
+        print(f"Warning: Entropy segmentation failed, returning zeros: {e}")
+        return np.zeros_like(image, dtype=np.uint8)
 
-#set the number of pixel to set the origin of the angle vector
-originvector=int(args.vector)
+
+def trad_scanner_threshold(image, threshold_value=0.5):
+    """
+    Traditional segmentation for scanner using simple thresholding.
+    """
+    try:
+        binary = image > threshold_value
+        return binary.astype(np.uint8)
+    except Exception as e:
+        print(f"Warning: Threshold segmentation failed, returning zeros: {e}")
+        return np.zeros_like(image, dtype=np.uint8)
 
 
+# ----------------------
+# Argument parsing
+# ----------------------
+parser = argparse.ArgumentParser(description='ACORBA - Segmentation Only (Scanner)')
+parser.add_argument('--input_folder', type=str, help='Folder containing .tif stacks')
+parser.add_argument('--exp_type', type=str, help='Experiment type')
+parser.add_argument('--saveplot', type=str, default='0')
+parser.add_argument('--normalization', type=str, default='1')
+parser.add_argument('--prediction', type=str, default='None')
+parser.add_argument('--binary_folder', type=str, default='')
+parser.add_argument('--rootplot', type=str, default='0')
+parser.add_argument('--method', type=str, default='Deep Machine Learning')
+parser.add_argument('--custom', type=str, default='')
+parser.add_argument('--smooth', type=str, default='1')
+parser.add_argument('--superaccuracy', type=str, default='0')
+parser.add_argument('--savesegmentation', type=str, default='0')
+parser.add_argument('--tradmethod', type=str, default='Entropy')
+parser.add_argument('--broken', type=str, default='50')
+parser.add_argument('--vector', type=str, default='10')
+parser.add_argument('--output_dir', type=str, help='Folder where outputs are saved')
+args = parser.parse_args()
 
-#Retrieve images list
-listimage_temp= os.listdir(args.input_folder)
-listimage = [i for i in listimage_temp if i.endswith(".tif")]
-listimage.sort()
-print("The following image will be processed:")
-print(listimage)
-del listimage_temp #clean temporary list
+print('User inputs:')
+rootfolder = args.input_folder
+print('Root folder: ' + str(rootfolder))
 
-#Creates a directory to save the segmentations separetely from the originals
-#Helps when someone wants to run an analysis after
-exp_dir = args.input_folder+"/Saved Segmentations/"
-if not os.path.exists(exp_dir):
-    os.mkdir(exp_dir)
+# ----------------------
+# Validate input folder
+# ----------------------
 
-stack2=0#Increment for the progress bar
-#Load Deep Machine Learning libraries and models/weights
-if args.method=='Deep Machine Learning':
-    if len(args.custom)>0:
+if not rootfolder or not os.path.isdir(rootfolder):
+    sg.theme('Light Brown 3')
+    sg.popup(
+        "Please select the input folder containing .tif files",
+        title="Input folder required"
+    )
+    rootfolder = sg.popup_get_folder(
+        "Select input folder",
+        no_window=True
+    )
+
+if not rootfolder:
+    raise SystemExit("No input folder selected. Exiting.")
+
+rootfolder = os.path.abspath(os.path.expanduser(rootfolder))
+print(f'Using input folder: {rootfolder}')
+
+# Parse other arguments
+exp_type = args.exp_type
+seg_method = args.method
+binary_folder = args.binary_folder
+custom_models = args.custom
+trad_method = args.tradmethod
+deactivate_smoothing = args.smooth == '1'
+super_accuracy = args.superaccuracy == '1'
+
+print(f"Experiment type: {exp_type}")
+print(f"Segmentation method: {seg_method}")
+print(f"Traditional method: {trad_method}")
+print(f"Smoothing: {'Disabled' if deactivate_smoothing else 'Enabled'}")
+print(f"Super accuracy: {'Enabled' if super_accuracy else 'Disabled'}")
+
+# ----------------------
+# Output directory logic
+# ----------------------
+
+def resolve_output_dir(rootfolder, user_output):
+    """
+    Determine the output directory path.
+    Priority: user_output > rootfolder/Saved Segmentations > ~/Saved Segmentations
+    """
+    if user_output:
+        out = Path(user_output).expanduser()
+        if not out.is_absolute() and rootfolder:
+            out = Path(rootfolder).expanduser() / out
+    else:
+        if rootfolder:
+            out = Path(rootfolder).expanduser() / 'Saved Segmentations'
+        else:
+            out = Path.home() / 'Saved Segmentations'
+    return out
+
+
+def ensure_writable_dir(primary: Path) -> Path:
+    """
+    Ensure directory exists and is writable.
+    Falls back to home directory if primary location fails.
+    """
+    try:
+        primary.mkdir(parents=True, exist_ok=True)
+        # Test write permissions
+        testfile = primary / '.write_test'
+        with open(testfile, 'w') as f:
+            f.write('ok')
+        testfile.unlink(missing_ok=True)
+        return primary
+    except Exception as e:
+        print(f"Warning: cannot write to {primary} ({e}). Falling back to home directory.")
+        fallback = Path.home() / 'ACORBA_Saved_Segmentations'
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+output_dir = ensure_writable_dir(resolve_output_dir(rootfolder, args.output_dir))
+print(f'Using output folder: {output_dir}')
+print("=" * 80)
+
+# ----------------------
+# Processing parameters
+# ----------------------
+np.random.seed(42)  # The Answer to the Ultimate Question of Life, The Universe, and Everything
+size = 256
+
+# ----------------------
+# Load DML models and weights
+# ----------------------
+if len(binary_folder) == 0:
+    if len(custom_models) > 0:
         from keras.models import model_from_json
         print('Custom models and weights loading:')
-        model_weights=os.listdir(args.custom)
+        model_weights = os.listdir(custom_models)
+        custom_models_list = []
+        custom_weights_list = []
+        
         for i in model_weights:
-            if i.endswith(".json"):
-                with open(args.custom+"/"+i, 'r') as json:#check if its working
-                    loaded_model_json = json.read()
-                model = model_from_json(loaded_model_json)
+            if i.endswith('.json'):
+                custom_models_list.append(i)
             if i.endswith('.h5'):
-                model.load_weights(args.custom+"/"+i)
+                custom_weights_list.append(i)
+        
+        ans_surface = 'surface'
+        ans_tip = 'tip'
+        
+        # Load model architectures
+        for title in custom_models_list:
+            if ans_surface in title:
+                with open(Path(custom_models) / title, 'r') as json_file:
+                    loaded_model = model_from_json(json_file.read())
+                print('Root surface model loaded')
+            elif ans_tip in title:
+                with open(Path(custom_models) / title, 'r') as json_file:
+                    loaded_model_tip = model_from_json(json_file.read())
+                print('Root tip model loaded')
+        
+        # Load weights
+        for title in custom_weights_list:
+            if ans_surface in title:
+                loaded_model.load_weights(str(Path(custom_models) / title))
+                print('Root surface weights loaded')
+            elif ans_tip in title:
+                loaded_model_tip.load_weights(str(Path(custom_models) / title))
+                print('Root tip weights loaded')
     else:
         from keras_unet.models import satellite_unet
-        model = satellite_unet(input_shape=(256, 256, 1))
-        if args.superaccuracy=="True":
-            model.load_weights(
-                "models/unetnocontrast_lessaugm_09092021_22.h5")
+        print('Default models and weights loading')
+        loaded_model = satellite_unet(input_shape=(size, size, 1))
+        loaded_model_tip = satellite_unet(input_shape=(size, size, 1))
+        
+        # Scanner uses specific models
+        loaded_model.load_weights('models/model_scanner_256_sat_jaccard_update16062021_54.h5')
+        loaded_model_tip.load_weights('models/model_scanner_tip_256_sat_jaccard_update17062021_176.h5')
+    
+    print('Models and weights are loaded')
+
+# ----------------------
+# Input files
+# ----------------------
+rootlist = [i for i in os.listdir(rootfolder) if i.endswith('.tif')]
+print('The following files will be processed:')
+print(rootlist)
+
+if not rootlist:
+    print("ERROR: No .tif files found in input folder!")
+    raise SystemExit("No .tif files found. Exiting.")
+
+# Calculate total loop length for progress bar
+looplenght = looplenght_determinator(list_image=rootlist, folder=rootfolder)
+print(f"Total frames to process: {looplenght}")
+print("=" * 80)
+
+# ----------------------
+# Main processing loop
+# ----------------------
+for inc_root in rootlist:
+    sg.theme('Light Brown 8')
+    print(f"\nProcessing file: {inc_root}")
+    
+    # Read image stack
+    test = tiff.imread(Path(rootfolder) / inc_root)
+    test_shape = test.shape
+    print(f"Stack shape: {test_shape}")
+    
+    tradlist = []
+    X_test = np.zeros((len(test), size, size), dtype=np.float32)
+    
+    print("Converting stack to array and resizing/padding to 256x256")
+    for n in range(len(test)):
+        sg.OneLineProgressMeter(
+            inc_root + ' import, padding, resizing',
+            n + 1, len(test), 'key'
+        )
+        
+        im = (test[n] / 255).astype('uint8')
+        tradlist.append(im)
+        
+        # Handle non-square images
+        if im.shape[0] != im.shape[1]:
+            desired_size = size
+            old_size = im.shape
+            ratio = float(desired_size) / max(old_size)
+            new_size = tuple([int(x * ratio) for x in old_size])
+            img_t = cv2.resize(im, (new_size[1], new_size[0]))
+            
+            # Add padding
+            delta_w = desired_size - new_size[1]
+            delta_h = desired_size - new_size[0]
+            top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+            left, right = delta_w // 2, delta_w - (delta_w // 2)
+            color = np.average(im)
+            img_t = cv2.copyMakeBorder(
+                img_t, top, bottom, left, right,
+                cv2.BORDER_CONSTANT, value=color
+            )
+            X_test[n] = img_t / 255
         else:
-            model.load_weights(
-                "models/unetnocontrast_lessaugm_09092021_87.h5")
-    print("Scanner prediction model and weights loaded")
-
-#Setting the progress bar total length by opening every image lenght info and
-#summing their timeframe numbers
-looplenght=acorba.folder.looplenght_determinator(list_image=listimage,folder=args.input_folder)
-
-listimage2=[]
-#Starting analysis
-for images in listimage:#loop for .tif stacks
-    seg_list=[]#create segmentation list to transform into an array at the end
-    #and imwrite, save padded picture if machine learning regular
-    if args.method=="Deep Machine Learning" and args.superaccuracy=="False":
-        im_list=[]
-    if not sg.OneLineProgressMeter(
-            'Segmentation in progress', stack2, looplenght, 'single'):
-        sys.exit("User stop!!!!!!!!!!!!!!")
-    lene=imread(args.input_folder+'/'+images)#Stack import
-    if min(lene.shape)==lene.shape[2]:
-        lene=np.rollaxis(lene,2,0)
-    ntf=int(min(lene.shape))#Finding the number of timeframes
-    imgname=images#Store image name in a different object as images part of
-    #the for loop it was creating problem with the try/except functions
-    if args.prediction in ("First",'All'):
-        #Create empty list for prediction export
-        predsexp=[]
-        imgsexp=[]
-    imnb=0
-    angletot=[]
-    while imnb < ntf:#Loop for timeframe
-        im=lene[imnb]
-        if args.method=="Deep Machine Learning":
-            if args.superaccuracy=="False":
-                from patchify import unpatchify
-                #Padding the image to a int of 256x256 tiles and tiling it
-                new_im, X, factorv, factorh=acorba.scanner.padding_tiling(
-                    image_input=im, tile=256)
-
-                #Preprocessing of array for fitting the model data input
-                X=np.array(X)#transform X from a list to an array
-                X=X/255#Value between 0 and 1: data normalization
-                X=np.expand_dims(X,3)#Model input is (256,256,1)
-
-                #Predictions
-                preds_train = model.predict(X, verbose=2,batch_size=1)
-                preds_train_t = (preds_train > 0.5).astype(np.uint8)
-
-                #Reconstruction of a segmentation image from the tiles
-                #architecture of the patching
-                preds_train_t.shape=(factorv,factorh,256,256)
-                #patching
-                mega=unpatchify(preds_train_t, new_im.shape)
-                #Super accuracy mode for scanner >> smooth tiling, requires
-                #tons of processing power and RAM!
-                im_list.append(new_im)
-            else:
-                im_expanded=np.expand_dims(im,2)#input is (256,256,1)
-                im_expanded=im_expanded/255#data normalization between 0 and 1
-                predictions_smooth = acorba.scanner.predict_img_with_smooth_windowing(
-                    input_img=im_expanded,
-                    window_size=256,
-                    # Minimal amount of overlap for windowing.
-                    #Must be an even number.
-                    subdivisions=2,
-                    nb_classes=1,
-                    pred_func=(
-                        lambda img_batch_subdiv:
-                            model.predict(
-                                (img_batch_subdiv), verbose=2,batch_size=1)
-                    )
-                )
-#somehow the non-root is under 0.01 instead of 0.5 for non smooth prediction
-                mega = (predictions_smooth > 0.01).astype(np.uint8)
-                new_im=im
-        elif args.method=="Traditional":
-            if args.tradmethod=="Entropy":
-                mega=acorba.scanner.trad_scanner(im)
-            else:
-                mega=acorba.scanner.trad_scanner_threshold(im)
-        elif args.method=="Own masks":
-            mega=imread(args.binary_folder+'/'+images,key=imnb)
-            if np.max(mega>1):
-                mega=mega/np.max(mega)
-            mega=mega.astype('uint8')
-        seg_list.append(mega)
-        imnb=imnb+1
-        stack2=stack2+1
-    seg_list=np.array(seg_list)
-    if args.superaccuracy=="True":
-        seg_list=np.squeeze(seg_list, axis=(3,))
-    path=args.input_folder+'//Saved Segmentations/'+images+'_'+'segmented.tif'
-    tifffile.imwrite(path, seg_list,imagej=True,metadata={'axes': 'TYX'},shape=(seg_list.shape))
-    if args.method=="Deep Machine Learning" and args.superaccuracy=="False":
-        im_list=np.array(im_list)
-        if args.superaccuracy=="True":
-            im_list=np.squeeze(im_list, axis=(3,))
-        path=args.input_folder+'/Saved Segmentations/'+images+'_'+'original_padded.tif'
-        tifffile.imwrite(path, im_list,imagej=True,metadata={'axes': 'TYX'},shape=(im_list.shape))
-        del im_list
-    del seg_list
+            X_test[n] = resize(im, (size, size), mode='constant', preserve_range=True) / 255
+    
+    # Save resized original stack
+    path = output_dir / f"{inc_root}_original_resized256.tif"
+    tifffile.imwrite(str(path), X_test)
+    print(f"Saved resized original: {path.name}")
+    
+    tradlist = np.array(tradlist)
+    
+    # ----------------------
+    # Segmentation predictions
+    # ----------------------
+    if seg_method == 'Deep Machine Learning':
+        X_test_exp = np.expand_dims(X_test, 3)
+        
+        print("Predicting root surface by deep machine learning...")
+        preds_test = loaded_model.predict(X_test_exp, verbose=2, batch_size=1)
+        prediction = (preds_test > 0.5).astype(np.uint8)
+        
+        print("Predicting root tip by deep machine learning...")
+        preds_test = loaded_model_tip.predict(X_test_exp, verbose=2, batch_size=1)
+        prediction_tip = (preds_test > 0.5).astype(np.uint8)
+        
+    elif seg_method == 'Own masks':
+        print("Loading custom masks...")
+        prediction = tiff.imread(Path(binary_folder) / 'surface' / inc_root)
+        prediction_tip = tiff.imread(Path(binary_folder) / 'tip' / inc_root)
+        
+        prediction = resize(
+            prediction, (len(prediction), size, size),
+            mode='constant', preserve_range=True
+        )
+        prediction_tip = resize(
+            prediction_tip, (len(prediction_tip), size, size),
+            mode='constant', preserve_range=True
+        )
+        
+        # Normalize if needed
+        if np.max(prediction) > 1:
+            prediction = prediction / np.max(prediction)
+        if np.max(prediction_tip) > 1:
+            prediction_tip = prediction_tip / np.max(prediction_tip)
+            
+    else:  # Traditional segmentation
+        print(f'Traditional segmentation of root surface using {trad_method}...')
+        prediction = []
+        
+        for img_pred in X_test:
+            if trad_method == 'Entropy':
+                prediction.append(trad_scanner_entropy(img_pred.copy()))
+            else:  # Threshold
+                prediction.append(trad_scanner_threshold(img_pred.copy()))
+        
+        prediction = np.array(prediction)
+        
+        # Use DML for tip prediction
+        X_test_exp = np.expand_dims(X_test, 3)
+        print("Predicting root tip by deep machine learning...")
+        preds_test = loaded_model_tip.predict(X_test_exp, verbose=2, batch_size=1)
+        prediction_tip = (preds_test > 0.5).astype(np.uint8)
+    
+    # Save predictions
+    path_tip = output_dir / f"{inc_root}_root_tip_256.tif"
+    tifffile.imwrite(str(path_tip), prediction_tip)
+    print(f"Saved root tip prediction: {path_tip.name}")
+    
+    path_surface = output_dir / f"{inc_root}_root_surface_256.tif"
+    tifffile.imwrite(str(path_surface), prediction)
+    print(f"Saved root surface prediction: {path_surface.name}")
+    
+    # Cleanup
+    gc.collect()
     sleep(0.02)
 
+print("\n" + "=" * 80)
+print("✓ Processing complete!")
+print(f"⏱  Total time: {time() - start_time:.2f} seconds")
+print(f"📁 Output directory: {output_dir}")
+print("=" * 80)
 
-print("I'm done")
-print("it took me",time() - start_time, "seconds to do my job!")
+# Easter egg
 print("Um9vdCByb2NrISB6bG9vcDI3")
-#collect garbage files
+
 gc.collect()

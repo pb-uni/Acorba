@@ -34,6 +34,38 @@ COLORS = {
     'warning': '#FB8C00'
 }
 
+# Core arguments for all scripts
+core_args = {
+    '-FOLDER-'   : '--input_folder',
+    '-EXP-'      : '--exp_type',
+    '-METHOD-'   : '--method',
+    '-BINARY-'   : '--binary_folder',
+    '-CUSTOM-'   : '--custom',
+}
+
+# Additional arguments for full analysis
+analysis_args = {
+    '-SAVEPLOT-' : '--saveplot',
+    '-NORM-'     : '--normalization',
+    '-PRED-'     : '--prediction',
+    '-ROOTPLOT-' : '--rootplot',
+    '-SEG-'      : '--savesegmentation',
+}
+
+# Microscopy-specific arguments
+microscopy_args = {
+    '-PIX-'      : '--circlepix',
+}
+
+# Scanner-specific arguments
+scanner_args = {
+    '-SMOOTH-'   : '--smooth',
+    '-ACCU-'     : '--superaccuracy',
+    '-TRADMETH-' : '--tradmethod',
+    '-BROKEN-'   : '--broken',
+    '-VECTOR-'   : '--vector'
+}
+
 # ---------- Subprocess helpers -------------------------------------------------
 
 def run_command(cmd_list, window=None, save_log=True, output_folder=None):
@@ -143,24 +175,40 @@ def check_for_updates(current_version):
 def create_modern_gui():
     """Create the modern GUI layout"""
     
-    input_definition = {
+    # Core arguments for all scripts
+    core_args = {
         '-FOLDER-'   : '--input_folder',
         '-EXP-'      : '--exp_type',
+        '-METHOD-'   : '--method',
+        '-BINARY-'   : '--binary_folder',
+        '-CUSTOM-'   : '--custom',
+    }
+    
+    # Additional arguments for full analysis
+    analysis_args = {
         '-SAVEPLOT-' : '--saveplot',
         '-NORM-'     : '--normalization',
         '-PRED-'     : '--prediction',
-        '-BINARY-'   : '--binary_folder',
         '-ROOTPLOT-' : '--rootplot',
-        '-METHOD-'   : '--method',
-        '-CUSTOM-'   : '--custom',
+        '-SEG-'      : '--savesegmentation',
+    }
+    
+    # Microscopy-specific arguments
+    microscopy_args = {
+        '-PIX-'      : '--circlepix',
+    }
+    
+    # Scanner-specific arguments
+    scanner_args = {
         '-SMOOTH-'   : '--smooth',
         '-ACCU-'     : '--superaccuracy',
-        '-SEG-'      : '--savesegmentation',
         '-TRADMETH-' : '--tradmethod',
-        '-PIX-'      : '--circlepix',
         '-BROKEN-'   : '--broken',
         '-VECTOR-'   : '--vector'
     }
+    
+    # Combined for backward compatibility
+    input_definition = {**core_args, **analysis_args, **microscopy_args, **scanner_args}
 
     # Custom button appearance
     button_config = {
@@ -376,7 +424,29 @@ def main():
                 window['-ML-'].write(f"✗ ERROR: Could not determine script for action: {event}\n")
                 continue
 
-            args = [sys.executable, script] + build_param_list(values, input_definition)
+            # Determine which arguments to pass based on action type
+            if event == 'Full Analysis':
+                # Full analysis needs all arguments
+                param_mapping = input_definition
+            elif event == 'Test segmentation':
+                # Test segmentation only needs core args + method-specific args
+                param_mapping = {**core_args}
+                if values.get('-EXP-') == 'Scanner':
+                    param_mapping.update(scanner_args)
+                else:
+                    param_mapping.update(microscopy_args)
+            elif event == 'Segmentation only':
+                # Segmentation only needs core args + method-specific args
+                param_mapping = {**core_args}
+                if values.get('-EXP-') == 'Scanner':
+                    param_mapping.update(scanner_args)
+                else:
+                    param_mapping.update(microscopy_args)
+            else:  # Binary Mask Assistant
+                # Mask assistant only needs core args
+                param_mapping = core_args
+            
+            args = [sys.executable, script] + build_param_list(values, param_mapping)
             
             window['-ML-'].write("\n" + "─" * 80 + "\n")
             window['-ML-'].write(f"▶ Starting: {event}\n")
